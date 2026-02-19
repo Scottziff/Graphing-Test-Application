@@ -36,7 +36,12 @@
       "Bash(git config:*)",
       "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Temp\\\\CheckGitConfig.ps1\")",
       "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Temp\\\\GitInit.ps1\")",
-      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Temp\\\\GitInit2.ps1\")"
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Temp\\\\GitInit2.ps1\")",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Temp\\\\CreateGitHubRepo2.ps1\")",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Temp\\\\CreateRepo.ps1\")",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Temp\\\\CreateRepo3.ps1\")",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Temp\\\\ListFiles.ps1\")",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Temp\\\\GitAddAll.ps1\")"
     ]
   }
 }
