@@ -549,7 +549,7 @@ namespace Graphing_Test_Application
             this.Controls.Add(pnlTop);          // Top
 
             this.ClientSize = new Size(1780, 1094);
-            this.Text = "Stock Price Chart - v01.01.066";
+            this.Text = "Stock Price Chart - v01.01.067";
             this.StartPosition = FormStartPosition.CenterScreen;
             this.DoubleBuffered = true;
 
@@ -3074,7 +3074,7 @@ namespace Graphing_Test_Application
                     area.AxisX.ScaleView.ZoomReset();
                 }
 
-                this.Text = $"{symbol} - {pointCount:N0} bars - Stock Price Chart v01.01.066";
+                this.Text = $"{symbol} - {pointCount:N0} bars - Stock Price Chart v01.01.067";
                 lblStatus.Text = $"{symbol}: {pointCount:N0} data points loaded";
 
                 if (_cachedDates.Count > 0)
@@ -3781,10 +3781,10 @@ namespace Graphing_Test_Application
                 }
                 else
                 {
-                    // Steel-blue line — new day boundary
+                    // Purple band — fills the overnight gap between trading days
                     strip.Tag = "DayDivider";
-                    strip.StripWidth = 0.0001;
-                    strip.BackColor = Color.FromArgb(120, Color.SteelBlue);
+                    strip.StripWidth = 1.0;
+                    strip.BackColor = Color.FromArgb(60, 128, 0, 192);   // semi-transparent purple
                     strip.BorderColor = Color.Transparent;
                     strip.BorderWidth = 0;
                 }

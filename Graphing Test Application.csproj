@@ -8,9 +8,9 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
-    <Version>01.01.066</Version>
-    <AssemblyVersion>01.01.066</AssemblyVersion>
-    <FileVersion>01.01.066</FileVersion>
+    <Version>01.01.067</Version>
+    <AssemblyVersion>01.01.067</AssemblyVersion>
+    <FileVersion>01.01.067</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
