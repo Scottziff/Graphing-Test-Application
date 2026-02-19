@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"Graphing Test Application.csproj\" /p:Configuration=Debug /t:Rebuild /verbosity:minimal)",
+      "Bash(where:*)",
+      "Bash(cmd.exe /c \"dir /s /b \"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\*MSBuild.exe\"\" 2>nul | findstr /i Current\")",
+      "Bash(cmd.exe /c:*)",
+      "Bash(dotnet msbuild:*)",
+      "Bash(\"C:/Windows/Microsoft.NET/Framework64/v4.0.30319/MSBuild.exe\" \"C:\\\\Source\\\\ReposC#\\\\Graphing Test Application\\\\Graphing Test Application.sln\" /p:Configuration=Debug /t:Rebuild /verbosity:minimal)",
+      "Bash(\"C:/Windows/Microsoft.NET/Framework64/v4.0.30319/MSBuild.exe\" \"Graphing Test Application.sln\" /p:Configuration=Debug /t:Rebuild /verbosity:minimal)",
+      "Bash(powershell.exe:*)",
+      "Bash(ls:*)",
+      "Bash(findstr:*)",
+      "Bash(Select-Object FullName)",
+      "Bash(powershell -Command:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(dotnet build:*)",
+      "Bash(taskkill:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(start \"\" \"C:\\\\Source\\\\ReposC#\\\\Graphing Test Application\\\\bin\\\\Debug\\\\net8.0-windows\\\\Graphing Test Application.exe\")",
+      "Bash(dotnet clean:*)",
+      "Bash(start \"\" \"bin\\\\Debug\\\\net8.0-windows\\\\Graphing Test Application.exe\")",
+      "Bash(timeout:*)",
+      "Bash(tasklist:*)",
+      "Bash(cmd /c:*)",
+      "Bash(Get-Content \"C:\\\\Temp\\\\fmp_test.txt\")",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:/Temp/TestFmp.ps1\")",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:/Temp/TestFmp2.ps1\")",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:/Temp/TestFmp3.ps1\")",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -Command \"Stop-Process -Name ''Graphing Test Application'' -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; Set-Location ''C:\\\\Source\\\\ReposC#\\\\Graphing Test Application''; dotnet build --configuration Debug 2>&1 | Select-Object -Last 5 | Out-String\")",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:/Temp/TestFmpJun.ps1\")",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Temp\\\\CheckGitRemotes.ps1\")",
+      "Bash(gh auth status:*)",
+      "Bash(git config:*)",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Temp\\\\CheckGitConfig.ps1\")",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Temp\\\\GitInit.ps1\")",
+      "Bash(\"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"C:\\\\Temp\\\\GitInit2.ps1\")"
+    ]
+  }
+}
