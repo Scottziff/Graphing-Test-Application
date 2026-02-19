@@ -111,6 +111,17 @@ namespace Graphing_Test_Application
         private Series _simSellSeries;
         private readonly List<TextAnnotation> _simNumberAnnotations = new List<TextAnnotation>();
 
+        // --- Events / Gap Analysis ---
+        private List<StockEvent> _stockEvents = new List<StockEvent>();
+        private List<GapBar> _detectedGaps = new List<GapBar>();
+        private Dictionary<int, List<StockEvent>> _eventsByBarIndex = new Dictionary<int, List<StockEvent>>();
+        private readonly List<TextAnnotation> _eventAnnotations = new List<TextAnnotation>();
+        private Button btnEvents;
+        private TextBox txtGapThreshold;
+        private Label lblGapThreshold;
+        private decimal _gapThreshold = 0.5m;
+        private Label _lblHoverEvent;
+
         // --- Simulation-active state (locks indicators during sim) ---
         private bool _simulationActive = false;
         private readonly Dictionary<string, Color> _savedBuyCircleColors = new Dictionary<string, Color>();
@@ -296,6 +307,34 @@ namespace Graphing_Test_Application
             btnPivotTransaction.FlatAppearance.BorderSize = 0;
             btnPivotTransaction.Click += btnPivotTransaction_Click;
 
+            // Events button
+            btnEvents = new Button();
+            btnEvents.Text = "Events";
+            btnEvents.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            btnEvents.Location = new Point(1195, 7);
+            btnEvents.Size = new Size(75, 30);
+            btnEvents.BackColor = Color.FromArgb(230, 119, 0);
+            btnEvents.ForeColor = Color.White;
+            btnEvents.FlatStyle = FlatStyle.Flat;
+            btnEvents.FlatAppearance.BorderSize = 0;
+            btnEvents.Click += btnEvents_Click;
+
+            // Gap % threshold controls
+            lblGapThreshold = new Label();
+            lblGapThreshold.Text = "Gap %:";
+            lblGapThreshold.AutoSize = true;
+            lblGapThreshold.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            lblGapThreshold.Location = new Point(1278, 13);
+
+            txtGapThreshold = new TextBox();
+            txtGapThreshold.Font = new Font("Segoe UI", 9F);
+            txtGapThreshold.Location = new Point(1330, 9);
+            txtGapThreshold.Size = new Size(48, 24);
+            txtGapThreshold.Text = "0.5";
+            txtGapThreshold.TextAlign = HorizontalAlignment.Center;
+            txtGapThreshold.KeyDown += txtGapThreshold_KeyDown;
+            txtGapThreshold.Leave    += txtGapThreshold_Leave;
+
             pnlTop.Controls.Add(lblSymbol);
             pnlTop.Controls.Add(cboSymbols);
             pnlTop.Controls.Add(btnGetData);
@@ -308,6 +347,9 @@ namespace Graphing_Test_Application
             pnlTop.Controls.Add(btnPivotLeft);
             pnlTop.Controls.Add(btnPivotRight);
             pnlTop.Controls.Add(btnPivotTransaction);
+            pnlTop.Controls.Add(btnEvents);
+            pnlTop.Controls.Add(lblGapThreshold);
+            pnlTop.Controls.Add(txtGapThreshold);
             pnlTop.Controls.Add(lblStatus);
 
             // --- Indicator Panel (Left) ---
@@ -478,9 +520,20 @@ namespace Graphing_Test_Application
             _lblHoverOHLC.BackColor = Color.Transparent;
             _lblHoverOHLC.TextAlign = ContentAlignment.MiddleCenter;
 
+            _lblHoverEvent = new Label();
+            _lblHoverEvent.AutoSize = false;
+            _lblHoverEvent.Size = new Size(196, 50);
+            _lblHoverEvent.Location = new Point(2, 74);
+            _lblHoverEvent.Font = new Font("Segoe UI", 7.5F);
+            _lblHoverEvent.ForeColor = Color.Gold;
+            _lblHoverEvent.BackColor = Color.Transparent;
+            _lblHoverEvent.TextAlign = ContentAlignment.MiddleCenter;
+            _lblHoverEvent.Visible = false;
+
             _pnlHover.Controls.Add(_lblHoverDate);
             _pnlHover.Controls.Add(_lblHoverTime);
             _pnlHover.Controls.Add(_lblHoverOHLC);
+            _pnlHover.Controls.Add(_lblHoverEvent);
             chartStock.Controls.Add(_pnlHover);
             _pnlHover.BringToFront();
 
@@ -496,7 +549,7 @@ namespace Graphing_Test_Application
             this.Controls.Add(pnlTop);          // Top
 
             this.ClientSize = new Size(1780, 1094);
-            this.Text = "Stock Price Chart - v01.01.065";
+            this.Text = "Stock Price Chart - v01.01.066";
             this.StartPosition = FormStartPosition.CenterScreen;
             this.DoubleBuffered = true;
 
@@ -2912,6 +2965,12 @@ namespace Graphing_Test_Application
             _cachedCloses.Clear();
             _cachedVolumes.Clear();
 
+            // Clear events and gap markers
+            ClearEventMarkers();
+            _stockEvents.Clear();
+            _detectedGaps.Clear();
+            _eventsByBarIndex.Clear();
+
             try
             {
                 decimal globalHigh = decimal.MinValue;
@@ -3015,7 +3074,7 @@ namespace Graphing_Test_Application
                     area.AxisX.ScaleView.ZoomReset();
                 }
 
-                this.Text = $"{symbol} - {pointCount:N0} bars - Stock Price Chart v01.01.065";
+                this.Text = $"{symbol} - {pointCount:N0} bars - Stock Price Chart v01.01.066";
                 lblStatus.Text = $"{symbol}: {pointCount:N0} data points loaded";
 
                 if (_cachedDates.Count > 0)
@@ -3348,7 +3407,48 @@ namespace Graphing_Test_Application
             bool up = close >= open;
             _lblHoverOHLC.ForeColor = up ? Color.LimeGreen : Color.Tomato;
 
-            // Position panel near click, keeping it inside the chart bounds
+            // Show event info if any events at this bar (or same calendar date)
+            List<StockEvent> eventsAtBar = null;
+            _eventsByBarIndex.TryGetValue(barIndex, out eventsAtBar);
+
+            // Also check same date (events may land on different bar within same day)
+            if ((eventsAtBar == null || eventsAtBar.Count == 0) && _stockEvents.Count > 0)
+            {
+                DateTime barDate = dt.Date;
+                var sameDay = new List<StockEvent>();
+                foreach (var ev in _stockEvents)
+                    if (ev.Date.Date == barDate) sameDay.Add(ev);
+                if (sameDay.Count > 0) eventsAtBar = sameDay;
+            }
+
+            if (eventsAtBar != null && eventsAtBar.Count > 0)
+            {
+                var first = eventsAtBar[0];
+                string label = GetEventLabel(first.EventType);
+                string eventText = $"[{label}] {first.Title}";
+                if (eventsAtBar.Count > 1)
+                    eventText += $"\n+{eventsAtBar.Count - 1} more";
+                if (first.IsGapEvent)
+                    eventText += $"\nGap: {first.GapPercent:+0.00;-0.00}%";
+
+                _lblHoverEvent.Text = eventText;
+                _lblHoverEvent.ForeColor = GetEventLabelColor(first.EventType);
+                _lblHoverEvent.Visible = true;
+                _pnlHover.Size = new Size(200, 130);
+                _lblHoverDate.Size = new Size(196, 18);
+                _lblHoverTime.Size = new Size(196, 16);
+                _lblHoverOHLC.Size = new Size(196, 44);
+            }
+            else
+            {
+                _lblHoverEvent.Visible = false;
+                _pnlHover.Size = new Size(160, 72);
+                _lblHoverDate.Size = new Size(156, 18);
+                _lblHoverTime.Size = new Size(156, 16);
+                _lblHoverOHLC.Size = new Size(156, 44);
+            }
+
+            // Position panel near click/crosshair, keeping it inside chart bounds
             int panelX = mouseX + 12;
             int panelY = mouseY + 12;
             if (panelX + _pnlHover.Width > chartStock.Width - 5)
@@ -3692,6 +3792,351 @@ namespace Graphing_Test_Application
                 area.AxisX.StripLines.Add(strip);
                 prevDate = thisDate;
             }
+        }
+
+        // ============================================================
+        // Events button — fetch earnings, SEC filings, news and correlate with gaps
+        // ============================================================
+        private async void btnEvents_Click(object sender, EventArgs e)
+        {
+            string symbol = cboSymbols.Text.Trim().ToUpper();
+            if (string.IsNullOrEmpty(symbol) || _cachedDates.Count == 0)
+            {
+                MessageBox.Show("Please load a symbol first.", "Events", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            btnEvents.Enabled = false;
+            btnEvents.Text = "Loading...";
+
+            try
+            {
+                await FetchAndCorrelateEventsAsync(symbol);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Events failed:\n\n{ex.Message}", "Events Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                lblStatus.Text = "Events fetch failed.";
+            }
+            finally
+            {
+                btnEvents.Enabled = true;
+                btnEvents.Text = "Events";
+            }
+        }
+
+        private async Task FetchAndCorrelateEventsAsync(string symbol)
+        {
+            var dbg = _debugLog;
+            dbg.Location = new Point(this.Right + 8, this.Top);
+            dbg.Show();
+            dbg.BringToFront();
+            dbg.LogSection($"EVENTS  —  {symbol}  —  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+
+            // Step 1: Read API key
+            string apiKey = await ReadFmpApiKeyAsync(dbg);
+            if (string.IsNullOrEmpty(apiKey)) return;
+
+            // Step 2: Detect gaps in cached price data
+            if (!decimal.TryParse(txtGapThreshold.Text, out decimal threshold))
+                threshold = 0.5m;
+            _gapThreshold = threshold;
+
+            _detectedGaps = GapAnalyzer.DetectGaps(_cachedDates, _cachedOpens, _cachedCloses, threshold);
+            dbg.LogInfo($"Gap detection: {_detectedGaps.Count} gaps >= {threshold:F1}% found");
+
+            DateTime fromDate = _cachedDates[0].Date;
+            DateTime toDate   = _cachedDates[_cachedDates.Count - 1].Date;
+
+            // Step 3: Fetch from all sources
+            var allEvents = new List<StockEvent>();
+
+            using (var fetcher = new EventFetcher())
+            {
+                dbg.LogSection("FMP — Earnings Calendar");
+                var earnings = await fetcher.FetchEarningsAsync(symbol, fromDate, toDate, apiKey, dbg);
+                allEvents.AddRange(earnings);
+                dbg.LogInfo($"Earnings: {earnings.Count} events");
+
+                dbg.LogSection("FMP — Press Releases");
+                var news = await fetcher.FetchPressReleasesAsync(symbol, fromDate, toDate, apiKey, dbg);
+                allEvents.AddRange(news);
+                dbg.LogInfo($"Press releases: {news.Count} significant items");
+
+                dbg.LogSection("FMP — SEC Filings");
+                var filings = await fetcher.FetchSecFilingsAsync(symbol, fromDate, toDate, apiKey, dbg);
+                allEvents.AddRange(filings);
+                dbg.LogInfo($"SEC filings: {filings.Count} filings");
+
+                dbg.LogSection("SQL — [News Flash] table");
+                var newsFlash = await fetcher.FetchNewsFlashAsync(symbol, fromDate, toDate, _config.ConnectionString, dbg);
+                allEvents.AddRange(newsFlash);
+                dbg.LogInfo($"News Flash DB: {newsFlash.Count} records");
+            }
+
+            dbg.LogInfo($"Total events from all sources: {allEvents.Count}");
+
+            // Step 4: Resolve bar indices and correlate with gaps
+            ResolveEventBarIndices(allEvents);
+            CorrelateEventsWithGaps(allEvents);
+
+            _stockEvents = allEvents;
+
+            // Build O(1) lookup for hover panel
+            _eventsByBarIndex.Clear();
+            foreach (var evt in _stockEvents)
+            {
+                if (evt.BarIndex < 0) continue;
+                if (!_eventsByBarIndex.ContainsKey(evt.BarIndex))
+                    _eventsByBarIndex[evt.BarIndex] = new List<StockEvent>();
+                _eventsByBarIndex[evt.BarIndex].Add(evt);
+            }
+
+            // Step 5: Log detailed correlation summary
+            dbg.LogSection("Gap ↔ Event Correlation Summary");
+            int correlated = 0;
+            foreach (var gap in _detectedGaps)
+            {
+                string direction = gap.IsGapUp ? "▲ GAP UP  " : "▼ GAP DOWN";
+                var matchedEvents = new List<string>();
+                foreach (var ev in allEvents)
+                {
+                    int dayDiff = (int)(gap.GapDate - ev.Date.Date).TotalDays;
+                    if (dayDiff >= -1 && dayDiff <= 2)
+                        matchedEvents.Add($"[{GetEventLabel(ev.EventType)}] {ev.Title}");
+                }
+                if (matchedEvents.Count > 0)
+                {
+                    dbg.LogInfo($"{direction}  {gap.GapDate:MMM dd}  {gap.GapPercent:+0.00;-0.00}%  →  {matchedEvents.Count} event(s):");
+                    foreach (var m in matchedEvents)
+                        dbg.LogInfo($"    {m}");
+                    correlated++;
+                }
+                else
+                {
+                    dbg.LogWarning($"{direction}  {gap.GapDate:MMM dd}  {gap.GapPercent:+0.00;-0.00}%  →  no matching event found");
+                }
+            }
+
+            // Step 6: Draw on chart
+            DrawEventMarkers();
+
+            lblStatus.Text = $"Events: {allEvents.Count} total  |  {_detectedGaps.Count} gaps  |  {correlated} correlated";
+            dbg.LogSuccess($"DONE — {allEvents.Count} events  |  {_detectedGaps.Count} gaps  |  {correlated} correlated");
+            dbg.SetSummary($"{symbol} — {allEvents.Count} events | {_detectedGaps.Count} gaps | {correlated} correlated");
+        }
+
+        private async Task<string> ReadFmpApiKeyAsync(FmpDebugForm dbg)
+        {
+            dbg.LogSql("SELECT [Key1] FROM [APIKeys] WHERE [Api Compnay] = 'FMP'");
+            using (var conn = await _db.GetOpenConnectionAsync())
+            {
+                var cmd = new SqlCommand("SELECT [Key1] FROM [APIKeys] WHERE [Api Compnay] = 'FMP'", conn);
+                var result = await cmd.ExecuteScalarAsync();
+                string key = result as string ?? "";
+                if (string.IsNullOrEmpty(key))
+                    dbg.LogSqlError("FMP API key not found in [APIKeys].");
+                else
+                    dbg.LogSqlOk($"API key retrieved ({key.Substring(0, Math.Min(8, key.Length))}***)");
+                return key;
+            }
+        }
+
+        private void ResolveEventBarIndices(List<StockEvent> events)
+        {
+            var dateToFirstBar = new Dictionary<DateTime, int>();
+            for (int i = 0; i < _cachedDates.Count; i++)
+            {
+                DateTime d = _cachedDates[i].Date;
+                if (!dateToFirstBar.ContainsKey(d))
+                    dateToFirstBar[d] = i;
+            }
+
+            foreach (var evt in events)
+            {
+                DateTime evtDate = evt.Date.Date;
+                if (dateToFirstBar.TryGetValue(evtDate, out int barIdx))
+                {
+                    evt.BarIndex = barIdx;
+                }
+                else
+                {
+                    // Event on weekend/holiday — roll forward to next trading day
+                    for (int offset = 1; offset <= 5; offset++)
+                    {
+                        if (dateToFirstBar.TryGetValue(evtDate.AddDays(offset), out int nextIdx))
+                        {
+                            evt.BarIndex = nextIdx;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        private void CorrelateEventsWithGaps(List<StockEvent> events)
+        {
+            foreach (var evt in events)
+            {
+                DateTime evtDate = evt.Date.Date;
+                foreach (var gap in _detectedGaps)
+                {
+                    int dayDiff = (int)(gap.GapDate - evtDate).TotalDays;
+                    // Gap occurs same day or up to 2 days after event (e.g. AMC earnings → next-day gap)
+                    // Also handle event filed 1 day after gap (e.g. 8-K filed day after earnings)
+                    if (dayDiff >= -1 && dayDiff <= 2)
+                    {
+                        evt.IsGapEvent = true;
+                        evt.GapPercent = gap.GapPercent;
+                        break;
+                    }
+                }
+            }
+        }
+
+        private void DrawEventMarkers()
+        {
+            ClearEventMarkers();
+            if (_cachedDates.Count == 0) return;
+
+            var area = chartStock.ChartAreas["MainArea"];
+
+            // Gap StripLines — gold/red for correlated, gray for unexplained
+            foreach (var gap in _detectedGaps)
+            {
+                bool hasEvent = false;
+                foreach (var ev in _stockEvents)
+                    if (ev.BarIndex == gap.BarIndex && ev.IsGapEvent) { hasEvent = true; break; }
+
+                var strip = new StripLine();
+                strip.Interval = 0;
+                strip.IntervalOffset = gap.BarIndex;
+                strip.Tag = "EventGap";
+                strip.BorderColor = Color.Transparent;
+                strip.BorderWidth = 0;
+
+                if (hasEvent)
+                {
+                    strip.StripWidth = 0.0006;
+                    strip.BackColor  = gap.IsGapUp
+                        ? Color.FromArgb(160, Color.Gold)
+                        : Color.FromArgb(160, Color.OrangeRed);
+                }
+                else
+                {
+                    strip.StripWidth = 0.0003;
+                    strip.BackColor  = Color.FromArgb(55, Color.DimGray);
+                }
+                area.AxisX.StripLines.Add(strip);
+            }
+
+            // Group events by bar index to combine labels (e.g. "E/8K")
+            var byBar = new Dictionary<int, List<StockEvent>>();
+            foreach (var ev in _stockEvents)
+            {
+                if (ev.BarIndex < 0) continue;
+                if (!byBar.ContainsKey(ev.BarIndex))
+                    byBar[ev.BarIndex] = new List<StockEvent>();
+                byBar[ev.BarIndex].Add(ev);
+            }
+
+            foreach (var kvp in byBar)
+            {
+                int barIdx = kvp.Key;
+                if (barIdx >= _cachedHighs.Count) continue;
+
+                var evList = kvp.Value;
+                decimal highAtBar = _cachedHighs[barIdx];
+
+                var labels = new List<string>();
+                foreach (var ev in evList)
+                {
+                    string lbl = GetEventLabel(ev.EventType);
+                    if (!labels.Contains(lbl)) labels.Add(lbl);
+                }
+
+                var ann = new TextAnnotation();
+                ann.Text = string.Join("/", labels);
+                ann.Font = new Font("Segoe UI", 7F, FontStyle.Bold);
+                ann.ForeColor = GetEventLabelColor(evList[0].EventType);
+                ann.BackColor = Color.Transparent;
+                ann.X = barIdx;
+                ann.Y = (double)(highAtBar * 1.006m);
+                ann.AnchorAlignment = ContentAlignment.BottomCenter;
+                ann.ClipToChartArea = "MainArea";
+                ann.Alignment = ContentAlignment.MiddleCenter;
+
+                chartStock.Annotations.Add(ann);
+                _eventAnnotations.Add(ann);
+            }
+        }
+
+        private void ClearEventMarkers()
+        {
+            if (chartStock.ChartAreas.Count > 0)
+            {
+                var area = chartStock.ChartAreas["MainArea"];
+                for (int i = area.AxisX.StripLines.Count - 1; i >= 0; i--)
+                {
+                    if (area.AxisX.StripLines[i].Tag is string tag && tag == "EventGap")
+                        area.AxisX.StripLines.RemoveAt(i);
+                }
+            }
+            foreach (var ann in _eventAnnotations)
+            {
+                if (chartStock.Annotations.Contains(ann))
+                    chartStock.Annotations.Remove(ann);
+            }
+            _eventAnnotations.Clear();
+        }
+
+        private static string GetEventLabel(StockEventType t)
+        {
+            switch (t)
+            {
+                case StockEventType.EarningsReport: return "E";
+                case StockEventType.PressRelease:   return "PR";
+                case StockEventType.SecFiling8K:    return "8K";
+                case StockEventType.SecFiling10Q:   return "Q";
+                case StockEventType.SecFiling10K:   return "K";
+                case StockEventType.NewsFlash:      return "N";
+                default:                            return "?";
+            }
+        }
+
+        private static Color GetEventLabelColor(StockEventType t)
+        {
+            switch (t)
+            {
+                case StockEventType.EarningsReport: return Color.Gold;
+                case StockEventType.PressRelease:   return Color.DeepSkyBlue;
+                case StockEventType.SecFiling8K:    return Color.OrangeRed;
+                case StockEventType.SecFiling10Q:   return Color.MediumPurple;
+                case StockEventType.SecFiling10K:   return Color.MediumSeaGreen;
+                case StockEventType.NewsFlash:      return Color.Cyan;
+                default:                            return Color.White;
+            }
+        }
+
+        private void txtGapThreshold_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                if (decimal.TryParse(txtGapThreshold.Text, out decimal val) && val > 0)
+                    _gapThreshold = val;
+                else
+                    txtGapThreshold.Text = _gapThreshold.ToString("F1");
+                e.SuppressKeyPress = true;
+            }
+        }
+
+        private void txtGapThreshold_Leave(object sender, EventArgs e)
+        {
+            if (!decimal.TryParse(txtGapThreshold.Text, out decimal val) || val <= 0)
+                txtGapThreshold.Text = _gapThreshold.ToString("F1");
+            else
+                _gapThreshold = val;
         }
 
         private void RebuildPriceSeriesFromCache()
