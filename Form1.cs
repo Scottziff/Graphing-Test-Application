@@ -122,6 +122,13 @@ namespace Graphing_Test_Application
         private decimal _gapThreshold = 0.5m;
         private Label _lblHoverEvent;
 
+        // --- Month-End AI Analysis ---
+        private Button btnAiReview;
+        private Series _aiSignalBuySeries;
+        private Series _aiSignalSellSeries;
+        private Series _aiSignalHoldSeries;
+        private AiReviewForm _aiReviewForm;
+
         // --- Simulation-active state (locks indicators during sim) ---
         private bool _simulationActive = false;
         private readonly Dictionary<string, Color> _savedBuyCircleColors = new Dictionary<string, Color>();
@@ -319,16 +326,28 @@ namespace Graphing_Test_Application
             btnEvents.FlatAppearance.BorderSize = 0;
             btnEvents.Click += btnEvents_Click;
 
+            // AI Review button
+            btnAiReview = new Button();
+            btnAiReview.Text = "AI Review";
+            btnAiReview.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            btnAiReview.Location = new Point(1278, 7);
+            btnAiReview.Size = new Size(85, 30);
+            btnAiReview.BackColor = Color.FromArgb(50, 120, 200);
+            btnAiReview.ForeColor = Color.White;
+            btnAiReview.FlatStyle = FlatStyle.Flat;
+            btnAiReview.FlatAppearance.BorderSize = 0;
+            btnAiReview.Click += btnAiReview_Click;
+
             // Gap % threshold controls
             lblGapThreshold = new Label();
             lblGapThreshold.Text = "Gap %:";
             lblGapThreshold.AutoSize = true;
             lblGapThreshold.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
-            lblGapThreshold.Location = new Point(1278, 13);
+            lblGapThreshold.Location = new Point(1373, 13);
 
             txtGapThreshold = new TextBox();
             txtGapThreshold.Font = new Font("Segoe UI", 9F);
-            txtGapThreshold.Location = new Point(1330, 9);
+            txtGapThreshold.Location = new Point(1425, 9);
             txtGapThreshold.Size = new Size(48, 24);
             txtGapThreshold.Text = "0.5";
             txtGapThreshold.TextAlign = HorizontalAlignment.Center;
@@ -348,6 +367,7 @@ namespace Graphing_Test_Application
             pnlTop.Controls.Add(btnPivotRight);
             pnlTop.Controls.Add(btnPivotTransaction);
             pnlTop.Controls.Add(btnEvents);
+            pnlTop.Controls.Add(btnAiReview);
             pnlTop.Controls.Add(lblGapThreshold);
             pnlTop.Controls.Add(txtGapThreshold);
             pnlTop.Controls.Add(lblStatus);
@@ -451,6 +471,7 @@ namespace Graphing_Test_Application
             series["ShowOpenClose"] = "Both";
             chartStock.Series.Add(series);
             chartStock.TabStop = true;
+            chartStock.PostPaint += DrawClosePriceTicks;
             chartStock.MouseWheel += chartStock_MouseWheel;
             chartStock.AxisViewChanged += chartStock_AxisViewChanged;
             chartStock.KeyDown += chartStock_KeyDown;
@@ -549,7 +570,7 @@ namespace Graphing_Test_Application
             this.Controls.Add(pnlTop);          // Top
 
             this.ClientSize = new Size(1780, 1094);
-            this.Text = "Stock Price Chart - v01.01.067";
+            this.Text = "Stock Price Chart - v01.01.071";
             this.StartPosition = FormStartPosition.CenterScreen;
             this.DoubleBuffered = true;
 
@@ -3074,7 +3095,7 @@ namespace Graphing_Test_Application
                     area.AxisX.ScaleView.ZoomReset();
                 }
 
-                this.Text = $"{symbol} - {pointCount:N0} bars - Stock Price Chart v01.01.067";
+                this.Text = $"{symbol} - {pointCount:N0} bars - Stock Price Chart v01.01.071";
                 lblStatus.Text = $"{symbol}: {pointCount:N0} data points loaded";
 
                 if (_cachedDates.Count > 0)
@@ -3943,6 +3964,358 @@ namespace Graphing_Test_Application
             }
         }
 
+        // ============================================================
+        // AI Review — month-end news title analysis via Claude API
+        // ============================================================
+        private async void btnAiReview_Click(object sender, EventArgs e)
+        {
+            string symbol = cboSymbols.Text.Trim().ToUpper();
+            if (string.IsNullOrEmpty(symbol) || _cachedDates.Count == 0)
+            {
+                MessageBox.Show("Please load a symbol first.", "AI Review", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            btnAiReview.Enabled = false;
+            btnAiReview.Text = "Analyzing...";
+
+            try
+            {
+                await RunMonthEndAnalysisAsync(symbol);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"AI Review failed:\n\n{ex.Message}", "AI Review Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                lblStatus.Text = "AI Review failed.";
+            }
+            finally
+            {
+                btnAiReview.Enabled = true;
+                btnAiReview.Text = "AI Review";
+            }
+        }
+
+        private async Task<string> ReadAnthropicApiKeyAsync()
+        {
+            using var conn = await _db.GetOpenConnectionAsync();
+            var cmd = new SqlCommand(
+                "SELECT [Key1] FROM [APIKeys] WHERE [Api Compnay] = 'Anthropic'", conn);
+            var result = await cmd.ExecuteScalarAsync();
+            return result as string ?? "";
+        }
+
+        private async Task RunMonthEndAnalysisAsync(string symbol)
+        {
+            // Show / create the AI review window
+            if (_aiReviewForm == null || _aiReviewForm.IsDisposed)
+                _aiReviewForm = new AiReviewForm();
+
+            _aiReviewForm.Location = new Point(
+                Math.Max(0, this.Right + 8),
+                this.Top);
+            _aiReviewForm.Show();
+            _aiReviewForm.BringToFront();
+            _aiReviewForm.Focus();
+            _aiReviewForm.ResetTally();
+            _aiReviewForm.SetSummary($"{symbol} — reading API key...");
+
+            lblStatus.Text = "AI Review: reading API key...";
+            Application.DoEvents();
+
+            // ── Read Anthropic API key ───────────────────────────────
+            _aiReviewForm.LogSection($"{symbol}  —  AI Month-End Analysis  —  {DateTime.Now:yyyy-MM-dd HH:mm}");
+            _aiReviewForm.LogSql("SELECT [Key1] FROM [APIKeys] WHERE [Api Compnay] = 'Anthropic'");
+
+            string anthropicKey = await ReadAnthropicApiKeyAsync();
+            if (string.IsNullOrEmpty(anthropicKey))
+            {
+                _aiReviewForm.LogSqlError("Anthropic API key not found in [APIKeys]. Add a row with [Api Compnay]='Anthropic' and [Key1]=<your key>.");
+                throw new Exception("Anthropic API key not found.");
+            }
+            _aiReviewForm.LogSqlOk($"API key retrieved ({anthropicKey.Substring(0, Math.Min(8, anthropicKey.Length))}***)");
+
+            // ── Build unique sorted trading dates ────────────────────
+            var tradingDates = new List<DateTime>();
+            var seenDates = new HashSet<DateTime>();
+            foreach (var dt in _cachedDates)
+            {
+                DateTime d = dt.Date;
+                if (seenDates.Add(d)) tradingDates.Add(d);
+            }
+            tradingDates.Sort();
+
+            // ── Find last trading day of each month ──────────────────
+            var monthEnds = new List<DateTime>();
+            for (int i = 0; i < tradingDates.Count; i++)
+            {
+                bool isLastOfMonth = (i == tradingDates.Count - 1) ||
+                    (tradingDates[i].Month != tradingDates[i + 1].Month ||
+                     tradingDates[i].Year  != tradingDates[i + 1].Year);
+                if (isLastOfMonth)
+                    monthEnds.Add(tradingDates[i]);
+            }
+
+            if (monthEnds.Count == 0)
+            {
+                _aiReviewForm.LogSqlError("No month-end dates found in loaded data.");
+                lblStatus.Text = "AI Review: no month-end dates found.";
+                return;
+            }
+
+            _aiReviewForm.LogDiag($"Loaded range: {tradingDates[0]:yyyy-MM-dd} → {tradingDates[tradingDates.Count - 1]:yyyy-MM-dd}  ({tradingDates.Count} trading days,  {monthEnds.Count} month-ends)");
+
+            // ── Diagnostic: total [News Flash] rows for this symbol ──
+            try
+            {
+                string diagSql = "SELECT COUNT(*) FROM [News Flash] WHERE [Symbol] = @Sym";
+                _aiReviewForm.LogSql($"SELECT COUNT(*) FROM [News Flash] WHERE [Symbol] = '{symbol}'");
+                using var diagConn = await _db.GetOpenConnectionAsync();
+                using var diagCmd  = new SqlCommand(diagSql, diagConn);
+                diagCmd.Parameters.AddWithValue("@Sym", symbol);
+                diagCmd.CommandTimeout = 15;
+                int totalRows = (int)await diagCmd.ExecuteScalarAsync();
+                _aiReviewForm.LogSqlOk($"[News Flash] total rows for {symbol}: {totalRows}");
+            }
+            catch (Exception ex)
+            {
+                _aiReviewForm.LogSqlError($"Diagnostic query failed: {ex.Message}");
+            }
+
+            ClearMonthEndSignals();
+
+            // ── Build date-to-last-barIndex map ──────────────────────
+            var dateToLastBar = new Dictionary<DateTime, int>();
+            for (int i = 0; i < _cachedDates.Count; i++)
+            {
+                DateTime d = _cachedDates[i].Date;
+                dateToLastBar[d] = i;
+            }
+
+            var results = new List<(DateTime date, int barIndex, string signal)>();
+
+            using var http = new System.Net.Http.HttpClient();
+            http.Timeout = TimeSpan.FromSeconds(60);
+            http.DefaultRequestHeaders.Add("x-api-key", anthropicKey);
+            http.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+
+            // SQL: pull all titles for entire calendar month up to month-end date
+            string sql = @"
+                SELECT [Title]
+                FROM [News Flash]
+                WHERE [Symbol] = @Sym
+                  AND CAST([PublishedDate] AS date) >= @MonthStart
+                  AND CAST([PublishedDate] AS date) <= @MonthEnd
+                ORDER BY [PublishedDate] ASC";
+
+            int processed = 0;
+            foreach (DateTime monthEndDate in monthEnds)
+            {
+                processed++;
+                DateTime monthStart = new DateTime(monthEndDate.Year, monthEndDate.Month, 1);
+
+                lblStatus.Text = $"AI Review: {monthEndDate:MMM yyyy}  ({processed}/{monthEnds.Count})...";
+                _aiReviewForm.SetSummary($"{symbol} — {monthEndDate:MMM yyyy}  ({processed}/{monthEnds.Count})");
+                Application.DoEvents();
+
+                // ── Fetch titles for the whole month ─────────────────
+                var titles = new List<string>();
+                _aiReviewForm.LogSql($"[News Flash] WHERE Symbol='{symbol}' AND Date BETWEEN {monthStart:yyyy-MM-dd} AND {monthEndDate:yyyy-MM-dd}");
+
+                try
+                {
+                    using var conn = await _db.GetOpenConnectionAsync();
+                    using var cmd  = new SqlCommand(sql, conn);
+                    cmd.Parameters.AddWithValue("@Sym",        symbol);
+                    cmd.Parameters.AddWithValue("@MonthStart", monthStart);
+                    cmd.Parameters.AddWithValue("@MonthEnd",   monthEndDate);
+                    cmd.CommandTimeout = 15;
+
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        if (!reader.IsDBNull(0))
+                        {
+                            string t = reader.GetString(0).Trim();
+                            if (!string.IsNullOrEmpty(t)) titles.Add(t);
+                        }
+                    }
+                    _aiReviewForm.LogSqlOk($"{titles.Count} title(s) returned");
+                }
+                catch (Exception ex)
+                {
+                    _aiReviewForm.LogSqlError($"Query failed: {ex.Message}");
+                }
+
+                _aiReviewForm.LogMonthHeader(monthEndDate, titles.Count);
+
+                if (titles.Count == 0)
+                {
+                    _aiReviewForm.LogNoTitles();
+                    continue;
+                }
+
+                for (int i = 0; i < titles.Count; i++)
+                    _aiReviewForm.LogTitle(i + 1, titles[i]);
+
+                // ── Build Claude prompt ───────────────────────────────
+                string titlesBlock = string.Join("\n", titles.Select((t, idx) => $"{idx + 1}. {t}"));
+                string prompt =
+                    $"You are a financial analyst. The following are news headlines for {symbol} " +
+                    $"during {monthEndDate:MMMM yyyy} (last trading day: {monthEndDate:MMM d, yyyy}).\n\n" +
+                    $"{titlesBlock}\n\n" +
+                    $"Based solely on the sentiment and content of these headlines, provide a brief " +
+                    $"executive summary (2-3 sentences) and end your response with exactly one of these " +
+                    $"three words on its own line: BUY, SELL, or HOLD.";
+
+                // ── Call Claude API ───────────────────────────────────
+                string signal      = "HOLD";
+                string responseText = "";
+                _aiReviewForm.LogApiCall();
+
+                try
+                {
+                    var requestBody = new
+                    {
+                        model    = "claude-haiku-4-5-20251001",
+                        max_tokens = 350,
+                        messages = new[]
+                        {
+                            new { role = "user", content = prompt }
+                        }
+                    };
+
+                    string requestJson = System.Text.Json.JsonSerializer.Serialize(requestBody);
+                    var httpContent = new System.Net.Http.StringContent(
+                        requestJson, System.Text.Encoding.UTF8, "application/json");
+
+                    var response     = await http.PostAsync("https://api.anthropic.com/v1/messages", httpContent);
+                    string responseJson = await response.Content.ReadAsStringAsync();
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(responseJson);
+                        if (doc.RootElement.TryGetProperty("content", out var contentArr) &&
+                            contentArr.GetArrayLength() > 0)
+                        {
+                            var first = contentArr[0];
+                            if (first.TryGetProperty("text", out var textProp))
+                                responseText = textProp.GetString() ?? "";
+                        }
+
+                        if (string.IsNullOrEmpty(responseText))
+                            _aiReviewForm.LogApiRaw(responseJson.Length > 300 ? responseJson.Substring(0, 300) : responseJson);
+
+                        string upper = responseText.ToUpper();
+                        if      (upper.Contains("BUY"))  signal = "BUY";
+                        else if (upper.Contains("SELL")) signal = "SELL";
+                        else                             signal = "HOLD";
+                    }
+                    else
+                    {
+                        _aiReviewForm.LogApiError($"HTTP {(int)response.StatusCode} — {(responseJson.Length > 200 ? responseJson.Substring(0, 200) : responseJson)}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _aiReviewForm.LogApiError($"{ex.GetType().Name}: {ex.Message}");
+                    signal = "HOLD";
+                }
+
+                if (!string.IsNullOrEmpty(responseText))
+                    _aiReviewForm.LogSummaryText(responseText);
+
+                _aiReviewForm.LogSignal(signal);
+
+                if (dateToLastBar.TryGetValue(monthEndDate, out int barIdx))
+                    results.Add((monthEndDate, barIdx, signal));
+            }
+
+            DrawMonthEndSignals(results);
+
+            int buys  = results.Count(r => r.signal == "BUY");
+            int sells = results.Count(r => r.signal == "SELL");
+            int holds = results.Count(r => r.signal == "HOLD");
+
+            _aiReviewForm.LogComplete(monthEnds.Count, results.Count);
+            _aiReviewForm.SetSummary($"{symbol} — DONE  |  ▲ BUY:{buys}  ▼ SELL:{sells}  ◆ HOLD:{holds}  |  {results.Count} months with data");
+            lblStatus.Text = $"AI Review: {results.Count} months analyzed — BUY:{buys}  SELL:{sells}  HOLD:{holds}";
+        }
+
+        private void DrawMonthEndSignals(List<(DateTime date, int barIndex, string signal)> results)
+        {
+            // Remove old series
+            ClearMonthEndSignals();
+
+            // Buy series — green filled triangle
+            _aiSignalBuySeries = new Series("AI_Buy");
+            _aiSignalBuySeries.ChartType = SeriesChartType.Point;
+            _aiSignalBuySeries.ChartArea = "MainArea";
+            _aiSignalBuySeries.MarkerStyle = MarkerStyle.Triangle;
+            _aiSignalBuySeries.MarkerSize = 14;
+            _aiSignalBuySeries.MarkerColor = Color.LimeGreen;
+            _aiSignalBuySeries.MarkerBorderColor = Color.DarkGreen;
+            _aiSignalBuySeries.MarkerBorderWidth = 1;
+            _aiSignalBuySeries.IsVisibleInLegend = false;
+
+            // Sell series — red filled triangle
+            _aiSignalSellSeries = new Series("AI_Sell");
+            _aiSignalSellSeries.ChartType = SeriesChartType.Point;
+            _aiSignalSellSeries.ChartArea = "MainArea";
+            _aiSignalSellSeries.MarkerStyle = MarkerStyle.Triangle;
+            _aiSignalSellSeries.MarkerSize = 14;
+            _aiSignalSellSeries.MarkerColor = Color.Red;
+            _aiSignalSellSeries.MarkerBorderColor = Color.DarkRed;
+            _aiSignalSellSeries.MarkerBorderWidth = 1;
+            _aiSignalSellSeries.IsVisibleInLegend = false;
+
+            // Hold series — hollow black triangle (white fill with black border)
+            _aiSignalHoldSeries = new Series("AI_Hold");
+            _aiSignalHoldSeries.ChartType = SeriesChartType.Point;
+            _aiSignalHoldSeries.ChartArea = "MainArea";
+            _aiSignalHoldSeries.MarkerStyle = MarkerStyle.Triangle;
+            _aiSignalHoldSeries.MarkerSize = 14;
+            _aiSignalHoldSeries.MarkerColor = Color.White;
+            _aiSignalHoldSeries.MarkerBorderColor = Color.Black;
+            _aiSignalHoldSeries.MarkerBorderWidth = 2;
+            _aiSignalHoldSeries.IsVisibleInLegend = false;
+
+            foreach (var (date, barIndex, signal) in results)
+            {
+                if (barIndex < 0 || barIndex >= _cachedLows.Count) continue;
+                double yPos = (double)(_cachedLows[barIndex] * 0.993m); // just below the candle
+
+                switch (signal)
+                {
+                    case "BUY":
+                        _aiSignalBuySeries.Points.AddXY(barIndex, yPos);
+                        break;
+                    case "SELL":
+                        _aiSignalSellSeries.Points.AddXY(barIndex, yPos);
+                        break;
+                    default:
+                        _aiSignalHoldSeries.Points.AddXY(barIndex, yPos);
+                        break;
+                }
+            }
+
+            chartStock.Series.Add(_aiSignalBuySeries);
+            chartStock.Series.Add(_aiSignalSellSeries);
+            chartStock.Series.Add(_aiSignalHoldSeries);
+        }
+
+        private void ClearMonthEndSignals()
+        {
+            foreach (string name in new[] { "AI_Buy", "AI_Sell", "AI_Hold" })
+            {
+                var s = chartStock.Series.FindByName(name);
+                if (s != null) chartStock.Series.Remove(s);
+            }
+            _aiSignalBuySeries  = null;
+            _aiSignalSellSeries = null;
+            _aiSignalHoldSeries = null;
+        }
+
         private void ResolveEventBarIndices(List<StockEvent> events)
         {
             var dateToFirstBar = new Dictionary<DateTime, int>();
@@ -4401,6 +4774,55 @@ namespace Graphing_Test_Application
             int peakCount = _pivotPoints.Count(p => p.Type == PivotType.Peak);
             int troughCount = _pivotPoints.Count(p => p.Type == PivotType.Trough);
             lblStatus.Text = $"Pivots: {peakCount} peaks (red), {troughCount} troughs (green) - threshold: {_pivotThreshold:F1}%";
+        }
+
+        // ============================================================
+        // Draw horizontal black close-price tick on each candlestick
+        // ============================================================
+        private void DrawClosePriceTicks(object sender, ChartPaintEventArgs e)
+        {
+            if (!rbCandlestick.Checked) return;
+            if (_cachedCloses.Count == 0) return;
+
+            var priceSeries = chartStock.Series.FindByName("Price");
+            if (priceSeries == null || priceSeries.Points.Count == 0) return;
+
+            var area = chartStock.ChartAreas["MainArea"];
+            var g = e.ChartGraphics.Graphics;
+
+            // Determine visible X range
+            double xMin = area.AxisX.ScaleView.ViewMinimum;
+            double xMax = area.AxisX.ScaleView.ViewMaximum;
+            if (double.IsNaN(xMin)) xMin = area.AxisX.Minimum;
+            if (double.IsNaN(xMax)) xMax = area.AxisX.Maximum;
+
+            // Half-width of a candle body in X axis units (pixels ÷ total bars × view range)
+            RectangleF plotArea = e.ChartGraphics.GetAbsoluteRectangle(area.InnerPlotPosition.ToRectangleF());
+            double viewRange = xMax - xMin;
+            if (viewRange <= 0) return;
+
+            double pixelsPerBar = plotArea.Width / viewRange;
+            float halfTickPx = Math.Max(1f, (float)(pixelsPerBar * 0.45));
+
+            using var pen = new Pen(Color.Black, 1.5f);
+
+            foreach (var pt in priceSeries.Points)
+            {
+                double xVal = pt.XValue;
+                if (xVal < xMin - 1 || xVal > xMax + 1) continue;
+
+                double closeVal = pt.YValues[3]; // High, Low, Open, Close
+
+                // Convert data coordinates to pixel coordinates
+                double xPx = area.AxisX.ValueToPixelPosition(xVal);
+                double yPx = area.AxisY.ValueToPixelPosition(closeVal);
+
+                float x1 = (float)(xPx - halfTickPx);
+                float x2 = (float)(xPx + halfTickPx);
+                float y  = (float)yPx;
+
+                g.DrawLine(pen, x1, y, x2, y);
+            }
         }
     }
 }
