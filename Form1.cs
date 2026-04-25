@@ -2475,7 +2475,7 @@ namespace Graphing_Test_Application
             else
             {
                 log.AppendLine($"[CONFIG] File NOT found: {configPath}");
-                log.AppendLine("[CONFIG] Using defaults: Tiger2023\\ZProduction / Stock System");
+                log.AppendLine("[CONFIG] Using defaults: Tiger2023\\ZDEV / Stock System");
             }
 
             log.AppendLine();

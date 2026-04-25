@@ -13,7 +13,7 @@ namespace Graphing_Test_Application
     // ============================================================
     public class DatabaseConfig
     {
-        public string Server { get; set; } = @"Tiger2023\ZProduction";
+        public string Server { get; set; } = @"Tiger2023\ZDEV";
         public string Database { get; set; } = "Stock System";
         public string TableName { get; set; } = "Schwab Positions";
         public bool UseWindowsAuth { get; set; } = true;
